@@ -1,5 +1,6 @@
 # Python
 __pycache__/
+*.pyc
 *.py[cod]
 *$py.class
 *.so
@@ -27,6 +28,7 @@ venv/
 benchmark/debug_videos/
 benchmark/logs/
 benchmark/benchmark_results.csv
+videos/
 
 # Environment
 .env

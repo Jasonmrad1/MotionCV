@@ -4,11 +4,16 @@ class SquatCounter:
     def __init__(self, min_visibility=0.5, buffer_limit=10): # Harder visibility requirement
         self.count = 0
         self.state = "UP"
-        
-        # Biomechanical "Sweet Spot" (Strict but fair)
-        self.down_threshold = 90  # Target: Parallel
-        self.up_threshold = 160   # Target: Full lockout
-        self.min_rom = 60         # Require significant motion (e.g. 170 -> 90 -> 170)
+        # Olympic sets
+        # # Biomechanical "Sweet Spot" (Strict but fair)
+        # self.down_threshold = 90  # Target: Parallel
+        # self.up_threshold = 160   # Target: Full lockout
+        # self.min_rom = 60         # Require significant motion (e.g. 170 -> 90 -> 170)
+
+        # ✔ FIXED (slightly more realistic, still strict)
+        self.down_threshold = 100   # was 90 → too strict for real videos
+        self.up_threshold = 155     # was 160 → too high for imperfect extension
+        self.min_rom = 45           # was 60 → too strict, rejects valid reps
         
         # Robustness Settings
         self.min_visibility = min_visibility
