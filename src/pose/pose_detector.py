@@ -14,7 +14,8 @@ class PoseDetector:
             num_poses=1,
             min_pose_detection_confidence=0.7, # Strict human recognition
             min_pose_presence_confidence=0.6,
-            min_tracking_confidence=0.6
+            min_tracking_confidence=0.6,
+            output_segmentation_masks=True
         )
 
         self.detector = vision.PoseLandmarker.create_from_options(options)

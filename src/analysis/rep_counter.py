@@ -14,7 +14,7 @@ class SquatCounter:
         self.down_threshold = 110   # was 100 → enter bottom phase earlier
         self.up_threshold = 155     # was 160 → too high for imperfect extension
         self.min_rom = 45           # was 60 → too strict, rejects valid reps
-        self.target_depth = 90      # Stricter requirement for a "Good" rep
+        self.target_depth = 95      # relaxed from 90 to 95 for better user experience
         
         # Robustness Settings
         self.min_visibility = min_visibility
@@ -26,31 +26,6 @@ class SquatCounter:
         self.rep_start_time = 0
         self.is_active_squat = False
         self.last_rep_data = None # Stores {status, rom, duration, min_angle}
-
-    def get_best_side_confidence(self, landmarks, l_indices, r_indices):
-        """
-        SWEET SPOT VISIBILITY: Requires BOTH Hip and Knee to be clearly present.
-        """
-        def calculate_leg_confidence(indices):
-            hip_v = landmarks[indices[0]].visibility
-            knee_v = landmarks[indices[1]].visibility
-            # Hard cutoff: both must be clearly detected
-            if hip_v >= self.min_visibility and knee_v >= self.min_visibility:
-                return (hip_v + knee_v) / 2
-            return 0
-
-        l_conf = calculate_leg_confidence(l_indices)
-        r_conf = calculate_leg_confidence(r_indices)
-        
-        best_v = max(l_conf, r_conf)
-        side = "L" if l_conf >= r_conf else "R"
-        
-        if best_v >= 0.8: # Very high confidence
-            return side, "HIGH"
-        elif best_v >= self.min_visibility:
-            return side, "MEDIUM"
-        else:
-            return side, "LOW"
 
     def update(self, knee_angle, confidence_level, timestamp=None):
         """
@@ -71,8 +46,8 @@ class SquatCounter:
         self.invalid_frame_count = 0 
 
         # 1. Intent Detection (Active Gate)
-        # Active only if actually squatting
-        if knee_angle < 145:
+        # Active only if actually squatting (Relaxed from 145 to 160)
+        if knee_angle < 160:
             self.is_active_squat = True
         else:
             if self.state == "UP":
