@@ -125,11 +125,11 @@ def main():
                 angle = compute_angle(hip, knee, ankle)
                 
                 # 3. Confidence-Aware Update
-                reps, state, is_viable, rep_done, is_active, duration = counter.update(angle, conf_level)
+                reps, state, is_viable, rep_done, is_active, duration = counter.update(angle, conf_level, timestamp_ms / 1000.0)
 
                 if is_viable:
                     if is_active and shoulder:
-                        realtime_cues = analyzer.analyze_posture(hip, shoulder, angle, is_active)
+                        realtime_cues = analyzer.analyze_posture(hip, shoulder, knee, ankle, angle, is_active)
                         for i, cue in enumerate(realtime_cues):
                             cv2.putText(img, cue, (int(w/2) - 100, 100 + i*30), 
                                         cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 165, 255), 2)

@@ -108,6 +108,8 @@ class BenchmarkRunner:
             out = cv2.VideoWriter(out_path, fourcc, fps_in, (width, height))
 
         counter = SquatCounter(min_visibility=0.15, buffer_limit=30)
+        analyzer = FormAnalyzer()
+        scorer = ScoringEngine()
         smoother = LandmarkSmoother(alpha=0.6)
 
         metrics = {
@@ -170,24 +172,43 @@ class BenchmarkRunner:
                     HIP = 23 if side_prefix == "L" else 24
                     KNEE = 25 if side_prefix == "L" else 26
                     ANKLE = 27 if side_prefix == "L" else 28
+                    SHOULDER = 11 if side_prefix == "L" else 12
 
-                    def get_pt(idx):
-                        if landmarks[idx].visibility >= 0.1:
+                    def get_target_pt(idx, is_leg=True):
+                        current_v = landmarks[idx].visibility
+                        if current_v >= 0.4:
                             coords = (landmarks[idx].x * width,
                                       landmarks[idx].y * height)
                             last_valid_coords[idx] = coords
                             return coords
+                        if is_leg and current_v < 0.15:
+                            return None
                         return last_valid_coords[idx]
 
-                    hip = smoother.smooth(HIP, get_pt(HIP))
-                    knee = smoother.smooth(KNEE, get_pt(KNEE))
-                    ankle = smoother.smooth(ANKLE, get_pt(ANKLE))
+                    hip = smoother.smooth(HIP, get_target_pt(HIP, is_leg=True))
+                    knee = smoother.smooth(KNEE, get_target_pt(KNEE, is_leg=True))
+                    ankle = smoother.smooth(ANKLE, get_target_pt(ANKLE, is_leg=True))
+                    shoulder = get_target_pt(SHOULDER, is_leg=False)
 
                     if hip and knee and ankle:
                         angle = compute_angle(hip, knee, ankle)
-                        _, curr_state, _, _, is_active, _ = counter.update(
-                            angle, conf_level
+                        _, curr_state, is_viable, rep_done, is_active, duration = counter.update(
+                            angle, conf_level, timestamp_ms / 1000.0
                         )
+
+                        if is_viable:
+                            if is_active and shoulder:
+                                analyzer.analyze_posture(hip, shoulder, knee, ankle, angle, is_active)
+
+                            if counter.last_rep_data:
+                                rd = counter.last_rep_data
+                                status = "COUNTED" if rd["valid"] else "REJECTED"
+                                print(f"  [REP {status}] Frame {frame_idx} | {rd['reason']} | ROM: {rd['rom']} | Duration: {rd['duration']}s | Min Angle: {rd['min_angle']}")
+
+                            if rep_done:
+                                feedback, min_angle, max_tilt = analyzer.get_rep_summary()
+                                scorer.calculate_score(min_angle, max_tilt, duration)
+                                analyzer.reset_rep_metrics()
 
                         if is_active:
                             metrics["active_frames"] += 1
