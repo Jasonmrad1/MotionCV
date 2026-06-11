@@ -77,7 +77,8 @@ async def process_frame(data: FrameData):
         "feedback": feedback,
         "last_score": metrics.get("last_score"),
         "active_side": metrics.get("side"),
-        "rep_done": rep_done
+        "rep_done": rep_done,
+        "key_joints": getattr(exercise, "KEY_JOINTS", [])
     }
 
 if __name__ == "__main__":
