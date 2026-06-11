@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>MotionCV Web Coach</title>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <style>
+        body { margin: 0; background: #121212; color: white; font-family: sans-serif; overflow: hidden; }
+        #video-container { position: relative; width: 100vw; height: 100vh; display: flex; justify-content: center; align-items: center; }
+        video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+        #overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+        
+        .hud { position: absolute; background: rgba(0,0,0,0.6); border-radius: 15px; padding: 15px; text-align: center; }
+        #feedback-box { top: 20px; left: 20px; right: 20px; font-size: 1.5rem; font-weight: bold; border: 2px solid #673AB7; }
+        #stats-box { bottom: 30px; left: 0; right: 0; display: flex; justify-content: space-around; background: none; }
+        
+        .stat-circle { width: 90px; height: 90px; background: rgba(103, 58, 183, 0.8); border-radius: 50%; display: flex; flex-direction: column; justify-content: center; align-items: center; border: 3px solid white; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+        .stat-val { font-size: 1.8rem; font-weight: bold; }
+        .stat-label { font-size: 0.7rem; opacity: 0.8; }
+        
+        #loading { position: absolute; z-index: 10; background: #121212; width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; }
+    </style>
+</head>
+<body>
+    <div id="loading">
+        <h2>Initializing AI Coach...</h2>
+        <p>Please allow camera access</p>
+    </div>
+
+    <div id="video-container">
+        <video id="input_video"></video>
+        <div id="overlay">
+            <div id="feedback-box" class="hud">Position yourself in frame</div>
+            <div id="stats-box">
+                <div class="stat-circle">
+                    <span id="rep_count" class="stat-val">0</span>
+                    <span class="stat-label">REPS</span>
+                </div>
+                <div class="stat-circle">
+                    <span id="score_val" class="stat-val">0%</span>
+                    <span class="stat-label">SCORE</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const videoElement = document.getElementById('input_video');
+        const feedbackEl = document.getElementById('feedback-box');
+        const repEl = document.getElementById('rep_count');
+        const scoreEl = document.getElementById('score_val');
+        const loadingEl = document.getElementById('loading');
+
+        const sessionId = Math.random().toString(36).substring(7);
+        let lastApiTime = 0;
+        const throttleMs = 150; // Send landmarks every 150ms
+
+        async function onResults(results) {
+            if (!results.poseLandmarks) return;
+            loadingEl.style.display = 'none';
+
+            const now = Date.now();
+            if (now - lastApiTime < throttleMs) return;
+            lastApiTime = now;
+
+            // Format landmarks for our Python API
+            const landmarks = results.poseLandmarks.map(lm => ({
+                x: lm.x,
+                y: lm.y,
+                z: lm.z,
+                visibility: lm.visibility || 1.0
+            }));
+
+            try {
+                const response = await fetch('/process', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        session_id: sessionId,
+                        exercise: 'curls',
+                        width: videoElement.videoWidth,
+                        height: videoElement.videoHeight,
+                        timestamp_ms: now,
+                        landmarks: landmarks
+                    })
+                });
+
+                const data = await response.json();
+                
+                // Update UI
+                if (data.feedback && data.feedback.length > 0) {
+                    feedbackEl.innerText = data.feedback[data.feedback.length - 1];
+                }
+                repEl.innerText = data.reps;
+                scoreEl.innerText = Math.round(data.last_score || 0) + '%';
+                
+                if (data.state === "SEARCHING") {
+                    feedbackEl.style.borderColor = "orange";
+                } else {
+                    feedbackEl.style.borderColor = "#673AB7";
+                }
+
+            } catch (err) {
+                console.error("API Error:", err);
+            }
+        }
+
+        const pose = new Pose({locateFile: (file) => {
+            return `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`;
+        }});
+
+        pose.setOptions({
+            modelComplexity: 1,
+            smoothLandmarks: true,
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5
+        });
+        pose.onResults(onResults);
+
+        const camera = new Camera(videoElement, {
+            onFrame: async () => {
+                await pose.send({image: videoElement});
+            },
+            width: 1280,
+            height: 720
+        });
+        camera.start();
+    </script>
+</body>
+</html>

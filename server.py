@@ -30,9 +30,12 @@ class FrameData(BaseModel):
     height: int
     timestamp_ms: int
 
-@app.get("/")
+from fastapi.responses import HTMLResponse
+
+@app.get("/", response_class=HTMLResponse)
 def home():
-    return {"status": "MotionCV Engine Online", "active_sessions": len(session_data)}
+    with open("index.html", "r") as f:
+        return f.read()
 
 @app.post("/process")
 async def process_frame(data: FrameData):
