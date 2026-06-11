@@ -3,17 +3,22 @@ import numpy as np
 from src.exercises.base import BaseExercise
 from src.pose.landmark_smoother import LandmarkSmoother
 from src.analysis.angle_utils import compute_angle
-from src.analysis.rep_counter import SquatCounter
+from src.analysis.rep_counter import AngleCounter
 from src.analysis.form_analyzer import SquatFormAnalyzer
 from src.analysis.scoring_engine import SquatScorer
 
 class Squat(BaseExercise):
     def __init__(self):
         super().__init__()
-        self.counter = SquatCounter(min_visibility=0.1, buffer_limit=30)
+        self.counter = AngleCounter(
+            down_thresh=110, 
+            up_thresh=155, 
+            target_depth=95,
+            min_rom=45
+        )
         self.analyzer = SquatFormAnalyzer()
         self.scorer = SquatScorer()
-        # 0.6 alpha for responsiveness, 100px jump filter for noise mitigation (Relaxed from 60)
+        # 0.6 alpha for responsiveness, 100px jump filter for noise mitigation
         self.smoother = LandmarkSmoother(alpha=0.6, max_jump=100)
         
         # SQUAT KEYPOINT MAP
@@ -31,8 +36,9 @@ class Squat(BaseExercise):
         self.current_angle = 180
         self.side_prefix = None
 
-    def process(self, landmarks, w, h, timestamp_ms):
+    def process(self, landmarks, world_landmarks, w, h, timestamp_ms, img=None):
         self.warning_msg = None
+        rep_done = False
         
         # 1. Dynamic Side Selection
         self.side_prefix, conf_level = self.get_best_side(landmarks, self.L_INDICES, self.R_INDICES)
@@ -50,7 +56,7 @@ class Squat(BaseExercise):
                 coords = (landmarks[idx].x * w, landmarks[idx].y * h)
                 self.last_valid_coords[idx] = coords
                 return coords
-            if is_leg and current_v < 0.1: # Relaxed from 0.15
+            if is_leg and current_v < 0.1:
                 return None
             return self.last_valid_coords[idx]
 
@@ -83,7 +89,10 @@ class Squat(BaseExercise):
                     'ankle': ankle,
                     'heel': heel
                 }
-                analysis_metrics = {'knee_angle': self.current_angle}
+                analysis_metrics = {
+                    'knee_angle': self.current_angle,
+                    'state': self.state
+                }
                 realtime_cues = self.analyzer.analyze_frame(landmark_data, analysis_metrics, self.is_active)
                 self.latest_feedback = realtime_cues if self.is_active else self.latest_feedback
 
@@ -106,7 +115,7 @@ class Squat(BaseExercise):
         else:
             self.warning_msg = "INITIALIZING CORE JOINTS..."
             
-        return self.reps, self.state, self.is_active, self.latest_feedback, self.warning_msg
+        return self.reps, self.state, self.is_active, self.latest_feedback, self.warning_msg, rep_done
 
     def get_metrics(self):
         return {

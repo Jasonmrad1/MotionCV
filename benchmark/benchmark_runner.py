@@ -1,6 +1,9 @@
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 import cv2
 import time
-import os
 import csv
 import json
 import argparse
@@ -8,7 +11,7 @@ import numpy as np
 
 from src.pose.pose_detector import PoseDetector
 from src.exercises import get_exercise_class
-from src.ui.overlays import draw_hud
+from src.ui.overlays import draw_hud, draw_session_report
 
 class BenchmarkRunner:
     def __init__(self, exercise="squats", save_video=False, live=False):
@@ -98,6 +101,8 @@ class BenchmarkRunner:
 
         exercise_cls = get_exercise_class(self.exercise_name)
         exercise = exercise_cls()
+        from src.analytics.workout_summary import WorkoutSummary
+        summary = WorkoutSummary()
 
         metrics = {
             "total_frames": 0,
@@ -132,17 +137,27 @@ class BenchmarkRunner:
 
             if result and result.pose_landmarks:
                 landmarks = result.pose_landmarks[0]
-                reps, curr_state, is_active, feedback, warning = exercise.process(landmarks, width, height, timestamp_ms)
+                world_landmarks = result.pose_world_landmarks[0] if result.pose_world_landmarks else None
+                # Updated to handle 6th return: rep_done
+                reps, curr_state, is_active, feedback, warning, rep_done = exercise.process(
+                    landmarks, world_landmarks, width, height, timestamp_ms, img=img
+                )
                 
                 # Visibility metrics
                 exercise_metrics = exercise.get_metrics()
                 side = exercise_metrics.get("side")
                 
-                # Approximate avg visibility for the side we're tracking
-                L_INDICES = [23, 25, 27]
-                R_INDICES = [24, 26, 28]
-                v_scores = [landmarks[i].visibility for i in (L_INDICES if side == "L" else R_INDICES)]
-                avg_v = sum(v_scores) / 3
+                # Use exercise-specific key indices for visibility tracking
+                target_indices = []
+                if hasattr(exercise, "L_INDICES") and hasattr(exercise, "R_INDICES"):
+                    target_indices = exercise.L_INDICES if side == "L" else exercise.R_INDICES
+                
+                if target_indices:
+                    v_scores = [landmarks[i].visibility for i in target_indices]
+                    avg_v = sum(v_scores) / len(v_scores) if v_scores else 0
+                else:
+                    avg_v = 0
+                
                 metrics["vis_sum"] += avg_v
 
                 if not warning or "REDUCED" in warning:
@@ -160,17 +175,15 @@ class BenchmarkRunner:
 
                 last_state = curr_state
 
-                # Rep attempt logging
-                if exercise.counter.last_rep_data:
-                    rd = exercise.counter.last_rep_data
-                    status = "COUNTED" if rd["valid"] else "REJECTED"
-                    print(f"  [REP {status}] Frame {frame_idx} | {rd['reason']} | ROM: {rd['rom']} | Duration: {rd['duration']}s | Min Angle: {rd['min_angle']}")
+                if rep_done:
+                    summary.add_rep(exercise_metrics["last_score"], {}, feedback, exercise_metrics["angle"])
 
             if not pose_found:
                 metrics["current_loss_streak"] += 1
                 metrics["max_loss_streak"] = max(metrics["max_loss_streak"], metrics["current_loss_streak"])
                 if not result or not result.pose_landmarks:
-                    exercise.counter.update(0, "LOW")
+                    if hasattr(exercise, 'counter') and exercise.counter:
+                        exercise.counter.update(0, "LOW")
 
             # Debug frame
             debug_img = img.copy()
@@ -211,6 +224,19 @@ class BenchmarkRunner:
 
         cap.release()
         if out: out.release()
+        
+        # Display final report if live mode
+        if self.live:
+            final_stats = summary.get_summary()
+            if final_stats:
+                # Capture last frame for background
+                # (Assuming cap was released, we might need a stored last frame)
+                # But since we're in the same function, we can just use the last 'debug_img'
+                report_img = debug_img.copy()
+                draw_session_report(report_img, final_stats)
+                cv2.imshow("MotionCV Debug", report_img)
+                cv2.waitKey(0)
+
         cv2.destroyAllWindows()
 
         duration = time.time() - start_time
@@ -247,13 +273,15 @@ class BenchmarkRunner:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-
+    parser.add_argument("--ex", type=str, default="squats", choices=["squats", "lunges", "split_squats", "pushups", "curls"],
+                        help="Select exercise to benchmark (default: squats)")
     parser.add_argument("--save-debug-video", action="store_true")
     parser.add_argument("--live", action="store_true")
 
     args = parser.parse_args()
 
     runner = BenchmarkRunner(
+        exercise=args.ex,
         save_video=args.save_debug_video,
         live=args.live
     )

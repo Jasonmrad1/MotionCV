@@ -10,10 +10,10 @@ class BaseExercise(ABC):
         self.warning_msg = None
 
     @abstractmethod
-    def process(self, landmarks, w, h, timestamp_ms):
+    def process(self, landmarks, world_landmarks, w, h, timestamp_ms, img=None):
         """
-        Processes pose landmarks and updates exercise state.
-        Returns: (reps, state, is_active, feedback, warning)
+        Processes pose landmarks and world landmarks (metric 3D) and updates exercise state.
+        Returns: (reps, state, is_active, feedback, warning, rep_done)
         """
         pass
 
